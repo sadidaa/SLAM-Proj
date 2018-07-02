@@ -1,0 +1,4 @@
+For getting v3+ to work:
+	Download ADE20K dataset(Its quite big)
+	The converted dataset will be saved at ./deeplab/datasets/ADE20K/tfrecord inside /models/research/deeplab/datasets
+	
