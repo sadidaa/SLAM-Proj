@@ -1,5 +1,6 @@
 import numpy as np 
 import cv2
+import tensorflow as tf
 
 im_size = (480,640)
 sigma_p = 0 # Some white noise variance thing
@@ -51,24 +52,56 @@ def get_initial_pose():
 def get_highgrad_element(img):
 
 
-def calc_photo_residual(u,frame,cur_keyframe,T):
-	r = 0
-	for i in u:
-		i.append(1) # Make i homogeneous
-		V = cur_keyframe.D[i[0]][i[1]] * np.matmul(cam_matrix_inv,i) # 3D point
-		V.append(1) # Make V homogeneous
-		u_prop = np.matmul(T,V) # 3D point in the real world shifted
-		u_prop = np.matmul(cam_matrix,u_prop) # 3D point in camera frame
-		u_prop = u_prop/u_prop[2] # Projection onto image plane
-		u_prop.pop()
-		r = r + (cur_keyframe.I[i[0]][i[1]] - frame.I[u_prop[0]][u_prop[1]]) # Works for single channel image
+def calc_photo_residual(i,frame,cur_keyframe,T):
+	i.append(1) # Make i homogeneous
+	V = cur_keyframe.D[i[0]][i[1]] * np.matmul(cam_matrix_inv,i) # 3D point
+	V.append(1) # Make V homogeneous
+	u_prop = np.matmul(T,V) # 3D point in the real world shifted
+	u_prop = np.matmul(cam_matrix,u_prop) # 3D point in camera frame
+	u_prop = u_prop/u_prop[2] # Projection onto image plane
+	u_prop.pop()
+	r = (cur_keyframe.I[i[0]][i[1]] - frame.I[u_prop[0]][u_prop[1]]) # Works for single channel image
 	return r
 
-def calc_photo_residual_uncertainty(u,frame,cur_keyframe,T):
+def calc_photo_residual_d(u,D,T,frame,cur_keyframe): #For finding the derivative only
+	u.append(1)
+	V = D*np.matmul(cam_matrix_inv,i)
+	V.append(1)
+	u_prop = np.matmul(T,V)
+	u_prop = np.matmul(cam_matrix,u_prop)
+	u_prop = u_prop/u_prop[2]
+	u_prop.pop()
+	r = cur_keyframe.I[u[0]][u[1]] - frame.I[u_prop[0]][u_prop[1]]
+	return r 
 
+def delr_delD(u,frame,cur_keyframe,T):
+	D = tf.constant(cur_keyframe.D[u[0]][u[1]])
+	r = calc_photo_residual_d(u,D,T,frame,cur_keyframe)
+	delr = 0
+	with tf.Session() as sess:
+		delr = tf.gradients(r,D)
+	return delr
+
+def calc_photo_residual_uncertainty(u,frame,cur_keyframe,T):
+	for i in u:
+		deriv = delr_delD()
+		sigma = (sigma_p**2 + (deriv**2)*cur_keyframe.U[u[0]][u[1]])**0.5
+		return sigma
+
+def huber_norm(x):
+
+
+def calc_cost_func():
+	sum = 0
+	for i in u:
+		sum = sum + huber_norm(calc_photo_residual(i,frame,cur_keyframe,T)/calc_photo_residual_uncertainty(i,frame,cur_keyframe,T))
+	return sum
 
 def minimize_cost_func(u,frame, cur_keyframe):
-	#Do newton-gauss minimisation
+	T = np.zeros((3,4)) #Initial guess - put random later
+	T[2,3] = 1
+	#Do weighted gauss-newton optimization
+
 
 def check_keyframe(T):
 	W = np.zeros((12,12)) #Weight Matrix
