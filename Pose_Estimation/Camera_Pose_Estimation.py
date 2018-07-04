@@ -14,7 +14,7 @@ class Keyframe:
 		self.I = image 
 
 def get_camera_image():
-	cam = cv2.VideoCapture
+	cam = cv2.VideoCapture(0)
 	ret,frame = cam.read()
 	#Convert frame to 2D numpy array?
 
@@ -22,7 +22,7 @@ def get_camera_matrix(): #Change to read from camera calib file
 	return np.zeros((3,3))
 
 cam_matrix = get_camera_matrix()
-cam_matrix_inv = np.linalg.inv()
+cam_matrix_inv = np.linalg.inv(cam_matrix)
 
 def get_cnn_depth(): #To get CNN predicted depth from an image
 
@@ -83,25 +83,66 @@ def delr_delD(u,frame,cur_keyframe,T):
 	return delr
 
 def calc_photo_residual_uncertainty(u,frame,cur_keyframe,T):
-	for i in u:
-		deriv = delr_delD()
-		sigma = (sigma_p**2 + (deriv**2)*cur_keyframe.U[u[0]][u[1]])**0.5
-		return sigma
+	deriv = delr_delD()
+	sigma = (sigma_p**2 + (deriv**2)*cur_keyframe.U[u[0]][u[1]])**0.5
+	return sigma
 
 def huber_norm(x):
 
 
-def calc_cost_func():
+def calc_cost_func(u,frame,cur_keyframe,T): # No need for this?
 	sum = 0
 	for i in u:
-		sum = sum + huber_norm(calc_photo_residual(i,frame,cur_keyframe,T)/calc_photo_residual_uncertainty(i,frame,cur_keyframe,T))
+		sum = sum + huber_norm(w[i]*calc_photo_residual(i,frame,cur_keyframe,T)/calc_photo_residual_uncertainty(i,frame,cur_keyframe,T))
 	return sum
 
-def minimize_cost_func(u,frame, cur_keyframe):
-	T = np.zeros((3,4)) #Initial guess - put random later
-	T[2,3] = 1
-	#Do weighted gauss-newton optimization
+def calc_cost(u,frame,cur_keyframe,T):
+	r = []
+	for i in u:
+		r.append(huber_norm(calc_photo_residual(i,frame,cur_keyframe,T)/calc_photo_residual_uncertainty(i,frame,cur_keyframe,T)))
+	return r
 
+def calc_cost_jacobian(u,frame,cur_keyframe,T_s):
+	T = np.reshape(T_s,(3,4))
+	r = []
+	for i in u:
+		r.append(huber_norm(calc_photo_residual(i,frame,cur_keyframe,T)/calc_photo_residual_uncertainty(i,frame,cur_keyframe,T)))
+	return r
+
+def get_jacobian(dof,u,frame,cur_keyframe,T):
+	T_s = T.flatten()
+	T_c = tf.constant(T_s)
+	r_s = calc_cost_jacobian(u,frame,keyframe,T_c)
+	with tf.Session() as sess:
+		_,J = tf.run(tf.test.compute_gradient(r_s,(dof,1),T_c,(12,1))) # Returns two jacobians...
+	return J
+
+def get_W(dof,stack_r):
+	W = np.zeros((dof,dof))
+	for i in range(dof):
+		W[i][i] = (dof + 1)/(dof + stack_r[i]**2)
+	return W
+
+def gauss_newton(dof,u,frame,cur_keyframe):
+	ini_T = np.zeros((3,4))
+	T = ini_T 
+	while(1):
+		stack_r = calc_cost(u,frame,cur_keyframe,T)
+		J = get_jacobian()
+		Jt = J.transpose()
+		W = get_W(dof,stack_r) # dof x dof
+		hess = np.linalg.inv(np.matmul(np.matmul(Jt,W),J)) # 12x12
+		delT = np.matmul(hess,Jt)
+		delT = np.matmul(delT,W)
+		delT = -np.matmul(delT,stack_r) 
+		T = np.dot(delT,T) # Or do subtraction?
+		if exit_crit(delT):
+			break
+
+def minimize_cost_func(u,frame, cur_keyframe):
+	dof = len(u)
+	T = gauss_newton(dof,u,frame,cur_keyframe)
+	return T
 
 def check_keyframe(T):
 	W = np.zeros((12,12)) #Weight Matrix
@@ -159,7 +200,6 @@ def main():
 				exit_program()
 			u = get_highgrad_element(frame) # u consists of a list of points. Where a point is a list of length 2
 			T = minimize_cost_func(u,frame,cur_keyframe)
-
 			if check_keyframe(T):
 				depth = get_cnn_depth(frame)	
 				K.append(Keyframe(T,depth,uncertainty,frame))
