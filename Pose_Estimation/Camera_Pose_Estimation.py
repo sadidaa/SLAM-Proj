@@ -182,8 +182,8 @@ def actual_fuse(u,frame,prev_keyframe):
 	v = v_temp/v_temp[2]
 	v.pop()
 	u_p = (prev_keyframe.D[v[0]][v[1]]*prev_keyframe.U[v[0]][v[1]]/frame.D[u[0]][u[1]]) + sigma_p**2
-	frame.D[u[0]][u[1]] = (u_p*frame.D[u[0]][u[1]] + frame.U[u[0]][u[1]]*prev_keyframe.D[v[0]][v[1]])/(u_p + frame.U[u[0]][u[1]])
-	frame.U[u[0]][u[1]] = u_p*frame.U[u[0]][u[1]]/(u_p + frame.U[u[0]][u[1]])
+	frame.D[u[0]][u[1]] = (u_p*frame.D[u[0]][u[1]] + frame.U[u[0]][u[1]]*prev_keyframe.D[v[0]][v[1]])/(u_p + frame.U[u[0]][u[1]]) #Kalman filter update step 1
+	frame.U[u[0]][u[1]] = u_p*frame.U[u[0]][u[1]]/(u_p + frame.U[u[0]][u[1]]) #Kalman filter update step 2
 	return frame.D[u[0]][u[1]],frame.U[u[0]][u[1]]
 
 def fuse_depth_map(frame,prev_keyframe):
@@ -191,7 +191,8 @@ def fuse_depth_map(frame,prev_keyframe):
 	frame.D,frame.U = actual_fuse_v(index_matrix,frame,prev_keyframe)
 	return frame.D,frame.U
 
-def refine_depth_map():
+def refine_depth_map(frame,T,cur_keyframe):
+
 
 
 def put_delay():
@@ -226,7 +227,7 @@ def main():
 				put_delay()
 				break
 			else:
-				refine_depth_map()
+				refine_depth_map(frame,T,cur_keyframe)
 				put_delay()
 
 if__name__ == "__main__":
